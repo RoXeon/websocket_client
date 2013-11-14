@@ -3,21 +3,21 @@
 -module(websocket_client).
 
 -export([
-         start_link/3,
+         start_link/4,
          cast/2,
          send/2
         ]).
 
--export([ws_client_init/6]).
+-export([ws_client_init/7]).
 
 %% @doc Start the websocket client
--spec start_link(URL :: string(), Handler :: module(), Args :: list()) ->
+-spec start_link(URL :: string(), Handler :: module(), Args :: list(), TransportOpts :: list()) ->
                         {ok, pid()} | {error, term()}.
-start_link(URL, Handler, Args) ->
+start_link(URL, Handler, Args, TransportOpts) ->
     case http_uri:parse(URL, [{scheme_defaults, [{ws,80},{wss,443}]}]) of
         {ok, {Protocol, _, Host, Port, Path, Query}} ->
             proc_lib:start_link(?MODULE, ws_client_init,
-                                [Handler, Protocol, Host, Port, Path ++ Query, Args]);
+                                [Handler, Protocol, Host, Port, Path ++ Query, Args, TransportOpts]);
         {error, _} = Error ->
             Error
     end.
@@ -32,9 +32,9 @@ cast(Client, Frame) ->
 %% @doc Create socket, execute handshake, and enter loop
 -spec ws_client_init(Handler :: module(), Protocol :: websocket_req:protocol(),
                      Host :: string(), Port :: inet:port_number(), Path :: string(),
-                     Args :: list()) ->
+                     Args :: list(), TransportOpts :: list()) ->
                             no_return().
-ws_client_init(Handler, Protocol, Host, Port, Path, Args) ->
+ws_client_init(Handler, Protocol, Host, Port, Path, Args, TransportOpts) ->
     Transport = case Protocol of
                     wss ->
                         ssl;
