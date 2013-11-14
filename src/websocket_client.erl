@@ -43,14 +43,14 @@ ws_client_init(Handler, Protocol, Host, Port, Path, Args, TransportOpts) ->
                 end,
     SockReply = case Transport of
                     ssl ->
-                        ssl:connect(Host, Port,
+                        ssl:connect(Host, Port, TransportOpts ++
                                     [{mode, binary},
                                      {verify, verify_none},
                                      {active, false},
                                      {packet, 0}
                                     ], 6000);
                     gen_tcp ->
-                        gen_tcp:connect(Host, Port,
+                        gen_tcp:connect(Host, Port, TransportOpts ++
                                         [binary,
                                          {active, false},
                                          {packet, 0}
