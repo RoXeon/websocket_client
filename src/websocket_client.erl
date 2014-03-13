@@ -138,7 +138,8 @@ receive_handshake(Buffer, Transport, Socket) ->
 
 %% @doc Send frame to server
 send(Frame, WSReq) ->
-  Socket = websocket_req:socket(WSReq),
+	io:format("send frame: ~p, req: ~p~n",[Frame,WSReq]),
+	Socket = websocket_req:socket(WSReq),
   Transport = websocket_req:transport(WSReq),
   Transport:send(Socket, encode_frame(Frame)).
 
@@ -372,6 +373,7 @@ retrieve_frame(WSReq, HandlerState, Opcode, Len, Data, Buffer) ->
 
 %% @doc Handles return values from the callback module
 handle_response(WSReq, {reply, Frame, HandlerState}, Buffer) ->
+		io:format("handle return value with frame: ~p,req: ~p ~n",[Frame,WSReq]),
     [Socket, Transport] = websocket_req:get([socket, transport], WSReq),
     case Transport:send(Socket, encode_frame(Frame)) of
         ok ->
