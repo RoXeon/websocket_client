@@ -416,7 +416,7 @@ encode_frame(Type) when is_atom(Type) ->
 %% @doc The payload is masked using a masking key byte by byte.
 %% Can do it in 4 byte chunks to save time until there is left than 4 bytes left
 mask_payload(MaskingKey, Payload) ->
-		io:format("mask_payload(~p,~p)",[MaskingKey,Payload]),
+		io:format("mask_payload(~p,~p)~n",[MaskingKey,Payload]),
     mask_payload(MaskingKey, Payload, <<>>).
 mask_payload(_, <<>>, Acc) ->
     Acc;
