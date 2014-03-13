@@ -419,6 +419,8 @@ mask_payload(MaskingKey, Payload) ->
     mask_payload(MaskingKey, Payload, <<>>).
 mask_payload(_, <<>>, Acc) ->
     Acc;
+mask_payload(_, [], Acc) ->
+		Acc;
 mask_payload(MaskingKey, << D:32, Rest/bits >>, Acc) ->
     T = D bxor MaskingKey,
     mask_payload(MaskingKey, Rest, << Acc/binary, T:32 >>);
