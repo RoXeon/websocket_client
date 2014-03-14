@@ -138,8 +138,7 @@ receive_handshake(Buffer, Transport, Socket) ->
 
 %% @doc Send frame to server
 send(Frame, WSReq) ->
-	io:format("send frame: ~p, req: ~p~n",[Frame,WSReq]),
-	Socket = websocket_req:socket(WSReq),
+  Socket = websocket_req:socket(WSReq),
   Transport = websocket_req:transport(WSReq),
   Transport:send(Socket, encode_frame(Frame)).
 
@@ -373,7 +372,6 @@ retrieve_frame(WSReq, HandlerState, Opcode, Len, Data, Buffer) ->
 
 %% @doc Handles return values from the callback module
 handle_response(WSReq, {reply, Frame, HandlerState}, Buffer) ->
-		io:format("handle return value with frame: ~p,req: ~p ~n",[Frame,WSReq]),
     [Socket, Transport] = websocket_req:get([socket, transport], WSReq),
     case Transport:send(Socket, encode_frame(Frame)) of
         ok ->
@@ -418,7 +416,6 @@ encode_frame(Type) when is_atom(Type) ->
 %% @doc The payload is masked using a masking key byte by byte.
 %% Can do it in 4 byte chunks to save time until there is left than 4 bytes left
 mask_payload(MaskingKey, Payload) ->
-		io:format("mask_payload(~p,~p)~n",[MaskingKey,Payload]),
     mask_payload(MaskingKey, Payload, <<>>).
 mask_payload(_, <<>>, Acc) ->
     Acc;
