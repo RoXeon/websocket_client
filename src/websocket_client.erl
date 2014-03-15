@@ -131,7 +131,7 @@ receive_handshake(Buffer, Transport, Socket) ->
         {match, _} ->
             {ok, Buffer};
         _ ->
-            {ok, Data} = Transport:recv(Socket, 0, 6000),
+            {ok, Data} = Transport:recv(Socket, 0, 30000),
             receive_handshake(<< Buffer/binary, Data/binary >>,
                               Transport, Socket)
     end.
