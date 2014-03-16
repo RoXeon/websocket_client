@@ -73,31 +73,42 @@ ws_client_init(Handler, Protocol, Host, Port, Path, Args, TransportOpts) ->
               Handler,
               generate_ws_key()
              ),
-    {ok, Buffer} = websocket_handshake(WSReq),
-    {ok, HandlerState, KeepAlive} = case Handler:init(Args, WSReq) of
-                                        {ok, HS} ->
-                                            {ok, HS, infinity};
-                                        {ok, HS, KA} ->
-                                            {ok, HS, KA}
-                                    end,
-    case Socket of
-        {sslsocket, _, _} ->
-            ssl:setopts(Socket, [{active, true}]);
-        _ ->
-            inet:setopts(Socket, [{active, true}])
-    end,
-    %% Since we could have already received some data already, we simulate a Socket message.
-    case Buffer of
-        <<>> -> ok;
-        _    -> self() ! {Transport, Socket, Buffer}
-    end,
-    KATimer = case KeepAlive of
-                  infinity ->
-                      undefined;
-                  _ ->
-                      erlang:send_after(KeepAlive, self(), keepalive)
-              end,
-    websocket_loop(websocket_req:set([{keepalive,KeepAlive},{keepalive_timer,KATimer}], WSReq), HandlerState, <<>>).
+		try
+			{ok, Buffer} = websocket_handshake(WSReq),
+			{ok, HandlerState, KeepAlive} = case Handler:init(Args, WSReq) of
+																				{ok, HS} ->
+																					{ok, HS, infinity};
+																				{ok, HS, KA} ->
+																					{ok, HS, KA}
+																			end,
+			case Socket of
+					{sslsocket, _, _} ->
+							ssl:setopts(Socket, [{active, true}]);
+					_ ->
+							inet:setopts(Socket, [{active, true}])
+			end,
+			%% Since we could have already received some data already, we simulate a Socket message.
+			case Buffer of
+					<<>> -> ok;
+					_    -> self() ! {Transport, Socket, Buffer}
+			end,
+			KATimer = case KeepAlive of
+										infinity ->
+												undefined;
+										_ ->
+												erlang:send_after(KeepAlive, self(), keepalive)
+								end,
+			websocket_loop(websocket_req:set([{keepalive,KeepAlive},{keepalive_timer,KATimer}], WSReq), HandlerState, <<>>)
+		catch
+			Type:Error ->
+				error_logger:error_msg(
+					"** Websocket client terminating~n"
+					"   for the reason ~p:~p~n"
+					"** Stacktrace: ~p~n~n",
+					[Type, Error, erlang:get_stacktrace()]),
+				Transport:close(Socket),
+				{error,{Type,Error}}
+		end.
 
 %% @doc Send http upgrade request and validate handshake response challenge
 -spec websocket_handshake(WSReq :: websocket_req:req()) -> {ok, binary()}.
@@ -201,7 +212,10 @@ handle_websocket_message(WSReq, HandlerState, Buffer, Message) ->
                       Reason :: tuple()) -> ok.
 websocket_close(WSReq, HandlerState, Reason) ->
     Handler = websocket_req:handler(WSReq),
-    try Handler:websocket_terminate(Reason, WSReq, HandlerState)
+		[Socket, Transport] = websocket_req:get([socket, transport], WSReq),
+		Transport:close(Socket),
+    try
+			Handler:websocket_terminate(Reason, WSReq, HandlerState)
     catch Class:Reason2 ->
       error_logger:error_msg(
         "** Websocket handler ~p terminating in ~p/~p~n"
