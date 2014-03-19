@@ -73,35 +73,45 @@ ws_client_init(Handler, Protocol, Host, Port, Path, Args, TransportOpts) ->
               Handler,
               generate_ws_key()
              ),
-    {ok, Buffer} = websocket_handshake(WSReq),
-    {ok, HandlerState, KeepAlive} = case Handler:init(Args, WSReq) of
-                                        {ok, HS} ->
-                                            {ok, HS, infinity};
-                                        {ok, HS, KA} ->
-                                            {ok, HS, KA}
-                                    end,
-    case Socket of
-        {sslsocket, _, _} ->
-            ssl:setopts(Socket, [{active, true}]);
-        _ ->
-            inet:setopts(Socket, [{active, true}])
-    end,
-    %% Since we could have already received some data already, we simulate a Socket message.
-    case Buffer of
-        <<>> -> ok;
-        _    -> self() ! {Transport, Socket, Buffer}
-    end,
-    KATimer = case KeepAlive of
-                  infinity ->
-                      undefined;
-                  _ ->
-                      erlang:send_after(KeepAlive, self(), keepalive)
-              end,
-    websocket_loop(websocket_req:set([{keepalive,KeepAlive},{keepalive_timer,KATimer}], WSReq), HandlerState, <<>>).
+		try
+			{ok, Buffer} = websocket_handshake(WSReq),
+			{ok, HandlerState, KeepAlive} = case Handler:init(Args, WSReq) of
+																				{ok, HS} ->
+																					{ok, HS, infinity};
+																				{ok, HS, KA} ->
+																					{ok, HS, KA}
+																			end,
+			case Socket of
+					{sslsocket, _, _} ->
+							ssl:setopts(Socket, [{active, true}]);
+					_ ->
+							inet:setopts(Socket, [{active, true}])
+			end,
+			%% Since we could have already received some data already, we simulate a Socket message.
+			case Buffer of
+					<<>> -> ok;
+					_    -> self() ! {Transport, Socket, Buffer}
+			end,
+			KATimer = case KeepAlive of
+										infinity ->
+												undefined;
+										_ ->
+												erlang:send_after(KeepAlive, self(), keepalive)
+								end,
+			websocket_loop(websocket_req:set([{keepalive,KeepAlive},{keepalive_timer,KATimer}], WSReq), HandlerState, <<>>)
+		catch
+			Type:Error ->
+				error_logger:error_msg(
+					"** Websocket client terminating~n"
+					"   for the reason ~p:~p~n"
+					"** Stacktrace: ~p~n~n",
+					[Type, Error, erlang:get_stacktrace()]),
+				Transport:close(Socket),
+				{error,{Type,Error}}
+		end.
 
 %% @doc Send http upgrade request and validate handshake response challenge
--spec websocket_handshake(WSReq :: websocket_req:req()) ->
-                                 ok.
+-spec websocket_handshake(WSReq :: websocket_req:req()) -> {ok, binary()}.
 websocket_handshake(WSReq) ->
     [Protocol, Path, Host, Key, Transport, Socket] =
         websocket_req:get([protocol, path, host, key, transport, socket], WSReq),
@@ -132,7 +142,7 @@ receive_handshake(Buffer, Transport, Socket) ->
         {match, _} ->
             {ok, Buffer};
         _ ->
-            {ok, Data} = Transport:recv(Socket, 0, 6000),
+            {ok, Data} = Transport:recv(Socket, 0, 30000),
             receive_handshake(<< Buffer/binary, Data/binary >>,
                               Transport, Socket)
     end.
@@ -195,15 +205,17 @@ handle_websocket_message(WSReq, HandlerState, Buffer, Message) ->
                   erlang:get_stacktrace()]),
               websocket_close(WSReq, HandlerState, Reason)
             end
-    end,
-    ok.
+    end.
 
 -spec websocket_close(WSReq :: websocket_req:req(),
                       HandlerState :: any(),
                       Reason :: tuple()) -> ok.
 websocket_close(WSReq, HandlerState, Reason) ->
     Handler = websocket_req:handler(WSReq),
-    try Handler:websocket_terminate(Reason, WSReq, HandlerState)
+		[Socket, Transport] = websocket_req:get([socket, transport], WSReq),
+		Transport:close(Socket),
+    try
+			Handler:websocket_terminate(Reason, WSReq, HandlerState)
     catch Class:Reason2 ->
       error_logger:error_msg(
         "** Websocket handler ~p terminating in ~p/~p~n"
@@ -221,11 +233,10 @@ generate_ws_key() ->
     base64:encode(crypto:rand_bytes(16)).
 
 %% @doc Validate handshake response challenge
--spec validate_handshake(HandshakeResponse :: binary(), Key :: binary()) ->
-                                ok.
+-spec validate_handshake(HandshakeResponse :: binary(), Key :: binary()) -> {ok, binary()}.
 validate_handshake(HandshakeResponse, Key) ->
     Challenge = base64:encode(
-                  crypto:sha(<< Key/binary, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11" >>)),
+                  crypto:hash(sha, << Key/binary, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11" >>)),
     %% Consume the response...
     {ok, _Status, Header, Buffer} = consume_response(HandshakeResponse),
     %% ...and make sure the challenge is valid.
@@ -377,11 +388,25 @@ retrieve_frame(WSReq, HandlerState, Opcode, Len, Data, Buffer) ->
 handle_response(WSReq, {reply, Frame, HandlerState}, Buffer) ->
     [Socket, Transport] = websocket_req:get([socket, transport], WSReq),
     case Transport:send(Socket, encode_frame(Frame)) of
-        ok -> retrieve_frame(WSReq, HandlerState, Buffer);
+        ok ->
+           %% we can still have more messages in buffer
+           case websocket_req:remaining(WSReq) of
+               %% buffer should not contain uncomplete messages
+               undefined -> retrieve_frame(WSReq, HandlerState, Buffer);
+               %% buffer contain uncomplete message that shouldnt be parsed
+               _ -> websocket_loop(WSReq, HandlerState, Buffer)
+           end;
         Reason -> websocket_close(WSReq, HandlerState, Reason)
     end;
 handle_response(WSReq, {ok, HandlerState}, Buffer) ->
-    retrieve_frame(WSReq, HandlerState, Buffer);
+    %% we can still have more messages in buffer
+    case websocket_req:remaining(WSReq) of
+        %% buffer should not contain uncomplete messages
+        undefined -> retrieve_frame(WSReq, HandlerState, Buffer);
+        %% buffer contain uncomplete message that shouldnt be parsed
+        _ -> websocket_loop(WSReq, HandlerState, Buffer)
+    end;
+
 handle_response(WSReq, {close, Payload, HandlerState}, _) ->
     send({close, Payload}, WSReq),
     websocket_close(WSReq, HandlerState, {normal, Payload}).
