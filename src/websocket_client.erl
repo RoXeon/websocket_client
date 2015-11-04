@@ -37,13 +37,13 @@ cast(Client, Frame) ->
 ws_client_init(Handler, Protocol, Host, Port, Path, Args, TransportOpts) ->
     Transport = case Protocol of
                     wss ->
-                        ssl;
+                        ssl2;
                     ws ->
                         gen_tcp
                 end,
     SockReply = case Transport of
-                    ssl ->
-                        ssl:connect(Host, Port, TransportOpts ++
+                    ssl2 ->
+                        ssl2:connect(Host, Port, TransportOpts ++
                                     [{mode, binary},
                                      {verify, verify_none},
                                      {active, false},
@@ -81,10 +81,10 @@ ws_client_init(Handler, Protocol, Host, Port, Path, Args, TransportOpts) ->
 																				{ok, HS, KA} ->
 																					{ok, HS, KA}
 																			end,
-			case Socket of
-					{sslsocket, _, _} ->
-							ssl:setopts(Socket, [{active, true}]);
-					_ ->
+			case Transport of
+                    ssl2 ->
+							ssl2:setopts(Socket, [{active, true}]);
+                    gen_tcp ->
 							inet:setopts(Socket, [{active, true}])
 			end,
 			%% Since we could have already received some data already, we simulate a Socket message.

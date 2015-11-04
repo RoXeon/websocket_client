@@ -4,7 +4,7 @@
   {vsn, "0.5.4"},
   {registered, []},
   {applications, [
-                  ssl,
+                  ssl2,
                   crypto
                  ]},
   {env, []}
